@@ -301,8 +301,6 @@ int sdei_mask_local_cpu(void)
 {
 	int err;
 
-	WARN_ON_ONCE(preemptible());
-
 	err = invoke_sdei_fn(SDEI_1_0_FN_SDEI_PE_MASK, 0, 0, 0, 0, 0, NULL);
 	if (err && err != -EIO) {
 		pr_warn_once("failed to mask CPU[%u]: %d\n",
@@ -315,14 +313,13 @@ int sdei_mask_local_cpu(void)
 
 static void _ipi_mask_cpu(void *ignored)
 {
+	WARN_ON_ONCE(preemptible());
 	sdei_mask_local_cpu();
 }
 
 int sdei_unmask_local_cpu(void)
 {
 	int err;
-
-	WARN_ON_ONCE(preemptible());
 
 	err = invoke_sdei_fn(SDEI_1_0_FN_SDEI_PE_UNMASK, 0, 0, 0, 0, 0, NULL);
 	if (err && err != -EIO) {
@@ -336,12 +333,15 @@ int sdei_unmask_local_cpu(void)
 
 static void _ipi_unmask_cpu(void *ignored)
 {
+	WARN_ON_ONCE(preemptible());
 	sdei_unmask_local_cpu();
 }
 
 static void _ipi_private_reset(void *ignored)
 {
 	int err;
+
+	WARN_ON_ONCE(preemptible());
 
 	err = invoke_sdei_fn(SDEI_1_0_FN_SDEI_PRIVATE_RESET, 0, 0, 0, 0, 0,
 			     NULL);
@@ -389,8 +389,6 @@ static void _local_event_enable(void *data)
 	int err;
 	struct sdei_crosscall_args *arg = data;
 
-	WARN_ON_ONCE(preemptible());
-
 	err = sdei_api_event_enable(arg->event->event_num);
 
 	sdei_cross_call_return(arg, err);
@@ -400,6 +398,8 @@ int sdei_event_enable(u32 event_num)
 {
 	int err = -EINVAL;
 	struct sdei_event *event;
+
+	WARN_ON_ONCE(preemptible());
 
 	mutex_lock(&sdei_events_lock);
 	event = sdei_event_find(event_num);
@@ -479,8 +479,6 @@ static void _local_event_unregister(void *data)
 	int err;
 	struct sdei_crosscall_args *arg = data;
 
-	WARN_ON_ONCE(preemptible());
-
 	err = sdei_api_event_unregister(arg->event->event_num);
 
 	sdei_cross_call_return(arg, err);
@@ -492,6 +490,7 @@ int sdei_event_unregister(u32 event_num)
 	struct sdei_event *event;
 
 	WARN_ON(in_nmi());
+	WARN_ON_ONCE(preemptible());
 
 	mutex_lock(&sdei_events_lock);
 	event = sdei_event_find(event_num);
@@ -561,8 +560,6 @@ static void _local_event_register(void *data)
 	struct sdei_registered_event *reg;
 	struct sdei_crosscall_args *arg = data;
 
-	WARN_ON(preemptible());
-
 	reg = per_cpu_ptr(arg->event->private_registered, smp_processor_id());
 	err = sdei_api_event_register(arg->event->event_num, sdei_entry_point,
 				      reg, 0, 0);
@@ -576,6 +573,7 @@ int sdei_event_register(u32 event_num, sdei_event_callback *cb, void *arg)
 	struct sdei_event *event;
 
 	WARN_ON(in_nmi());
+	WARN_ON_ONCE(preemptible());
 
 	mutex_lock(&sdei_events_lock);
 	if (sdei_event_find(event_num)) {
@@ -717,6 +715,8 @@ static int sdei_pm_notifier(struct notifier_block *nb, unsigned long action,
 {
 	int rv;
 
+	WARN_ON_ONCE(preemptible());
+
 	switch (action) {
 	case CPU_PM_ENTER:
 		rv = sdei_mask_local_cpu();
@@ -765,7 +765,7 @@ static int sdei_device_freeze(struct device *dev)
 	int err;
 
 	/* unregister private events */
-	cpuhp_remove_state(CPUHP_AP_ARM_SDEI_STARTING);
+	cpuhp_remove_state(CPUHP_AP_ARM_SDEI_ONLINE);
 
 	err = sdei_unregister_shared();
 	if (err)
@@ -786,7 +786,7 @@ static int sdei_device_thaw(struct device *dev)
 		return err;
 	}
 
-	err = cpuhp_setup_state(CPUHP_AP_ARM_SDEI_STARTING, "SDEI",
+	err = cpuhp_setup_state(CPUHP_AP_ARM_SDEI_ONLINE, "SDEI",
 				&sdei_cpuhp_up, &sdei_cpuhp_down);
 	if (err)
 		pr_warn("Failed to re-register CPU hotplug notifier...\n");
@@ -823,7 +823,7 @@ static int sdei_reboot_notifier(struct notifier_block *nb, unsigned long action,
 	 * We are going to reset the interface, after this there is no point
 	 * doing work when we take CPUs offline.
 	 */
-	cpuhp_remove_state(CPUHP_AP_ARM_SDEI_STARTING);
+	cpuhp_remove_state(CPUHP_AP_ARM_SDEI_ONLINE);
 
 	sdei_platform_reset();
 
@@ -1003,7 +1003,7 @@ static int sdei_probe(struct platform_device *pdev)
 		goto remove_cpupm;
 	}
 
-	err = cpuhp_setup_state(CPUHP_AP_ARM_SDEI_STARTING, "SDEI",
+	err = cpuhp_setup_state(CPUHP_AP_ARM_SDEI_ONLINE, "SDEI",
 				&sdei_cpuhp_up, &sdei_cpuhp_down);
 	if (err) {
 		pr_warn("Failed to register CPU hotplug notifier...\n");
