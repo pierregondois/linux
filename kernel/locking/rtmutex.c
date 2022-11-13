@@ -98,6 +98,7 @@ rt_mutex_set_owner(struct rt_mutex_base *lock, struct task_struct *owner)
 		val |= RT_MUTEX_HAS_WAITERS;
 
 	WRITE_ONCE(lock->owner, (struct task_struct *)val);
+	smp_mb();
 }
 
 static __always_inline void clear_rt_mutex_waiters(struct rt_mutex_base *lock)
