@@ -1252,13 +1252,22 @@ void sb_mark_inode_writeback(struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
 	unsigned long flags;
+	int local_count;
 
 	if (list_empty(&inode->i_wb_list)) {
 		spin_lock_irqsave(&sb->s_inode_wblist_lock, flags);
+
+		local_count = atomic_read(&inode->count) + 1;
+		BUG_ON(local_count != atomic_inc_return(&inode->count));
+
 		if (list_empty(&inode->i_wb_list)) {
 			list_add_tail(&inode->i_wb_list, &sb->s_inodes_wb);
 			trace_sb_mark_inode_writeback(inode);
 		}
+
+		local_count = atomic_read(&inode->count) + 1;
+		BUG_ON(local_count != atomic_inc_return(&inode->count));
+
 		spin_unlock_irqrestore(&sb->s_inode_wblist_lock, flags);
 	}
 }
@@ -1270,13 +1279,22 @@ void sb_clear_inode_writeback(struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
 	unsigned long flags;
+	int local_count;
 
 	if (!list_empty(&inode->i_wb_list)) {
 		spin_lock_irqsave(&sb->s_inode_wblist_lock, flags);
+
+		local_count = atomic_read(&inode->count) - 1;
+		BUG_ON(local_count != atomic_dec_return(&inode->count));
+
 		if (!list_empty(&inode->i_wb_list)) {
 			list_del_init(&inode->i_wb_list);
 			trace_sb_clear_inode_writeback(inode);
 		}
+
+		local_count = atomic_read(&inode->count) - 1;
+		BUG_ON(local_count != atomic_dec_return(&inode->count));
+
 		spin_unlock_irqrestore(&sb->s_inode_wblist_lock, flags);
 	}
 }
